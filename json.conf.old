@@ -1,0 +1,120 @@
+input {
+  file {
+    path => "/var/log/netwitness"
+    type => "netwitness"
+    #codec => "json"
+    #codec => "json" {
+    #    target => "%{message}"
+    #}
+    id => "netwitness"
+    start_position => "beginning"
+  }
+}
+
+filter {
+    #prune {
+    #    blacklist_names => [ "@version", "host", "path" ]
+    #}
+
+    json {
+        source => "message"
+        target => "json-data"
+    }
+
+    if ("" in [json-data][events][0][ip_src]) {
+
+        mutate {
+            add_field => { "ip_src" => "%{[json-data][events][0][ip_src]}" }
+            add_field => { "host_src" => "%{[json-data][events][0][ip_src]}" }
+        }
+        dns {
+            timeout => 5
+            max_retries => 5
+            reverse => [ "host_src" ]
+            action => "replace"
+        }
+
+        if ([host_src] == [ip_src]) {
+            mutate {
+                gsub => [ "message", "}$", ', "host_src": "no_ptr"}' ]
+            }
+        } else {
+            mutate {
+                gsub => [ "message", "}$", ', "host_src": "%{host_src}"}' ]
+            }
+        }
+    } else {
+        mutate {
+            gsub => [ "message", "}$", ', "host_src": "no_kv"}' ]
+        }
+    }
+
+    if ("" in [json-data][events][0][ip_dst]) {
+        mutate {
+            add_field => { "ip_dst" => "%{[json-data][events][0][ip_dst]}" }
+            add_field => { "host_dst" => "%{[json-data][events][0][ip_dst]}" }
+        }
+        dns {
+            timeout => 5
+            max_retries => 5
+            reverse => [ "host_dst" ]
+            action => "replace"
+        }
+        if ([host_dst] == [ip_dst]) {
+            mutate {
+                gsub => [ "message", "}$", ', "host_dst": "no_ptr"}' ]
+            }
+        } else {
+            mutate {
+                gsub => [ "message", "}$", ', "host_dst": "%{host_dst}"}' ]
+            }
+        }
+    } else {
+        mutate {
+            gsub => [ "message", "}$", ', "host_dst": "no_kv"}' ]
+        }
+    }
+
+    if ("" in [json-data][events][0][host_dst][0]) {
+        mutate {
+            add_field => { "ip_dst_tmp" => "%{[json-data][events][0][host_dst][0]}" }
+            add_field => { "host_dst_tmp" => "%{[json-data][events][0][host_dst][0]}" }
+        }
+        mutate {
+            split => { "host_dst_tmp" => " " }
+        }  
+        mutate {
+            add_field => { "host_dst_other" => "%{[host_dst_tmp][0]}" }
+        }
+        dns {
+            timeout => 5
+            max_retries => 5
+            reverse => [ "host_dst_other" ]
+            action => "replace"
+        }
+        if ([host_dst_other] == [ip_dst_tmp]) {
+            mutate {
+                gsub => [ "message", "}$", ', "host_dst_other": "no_ptr"}' ]
+            }
+        } else {
+            mutate {
+                gsub => [ "message", "}$", ', "host_dst_other": "%{host_dst_other}"}' ]
+            }
+        }
+    } else {
+        mutate {
+            gsub => [ "message", "}$", ', "host_dst_other": "no_kv"}' ]
+        }
+    }
+}
+
+output {
+# file {
+#   path => "/var/log/netwitness-logstash"
+#   codec => line { format => "%{message}"}
+# }
+  stdout {
+  #codec => json_lines
+  codec => line { format => "%{message}"}
+  }
+}
